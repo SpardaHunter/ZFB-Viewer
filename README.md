@@ -2,6 +2,8 @@
 
 Description: Program to view, download and change images embedded in ZFB files, you can also change the "Path".
 
+![imagen](https://github.com/user-attachments/assets/508610c9-469b-4e48-88c8-88bfffd55aea)
+
 How it works:
 - Select the folder containing the ZFB files from the "Select Folder" button.
 - From the "Path" column, double click with the mouse to edit the text.
