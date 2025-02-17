@@ -1,4 +1,4 @@
-# ZFB-Viewer
+# ZFB Viewer
 
 Description: Program to view, download and change images embedded in ZFB files, you can also change the "Path".
 
