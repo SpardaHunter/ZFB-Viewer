@@ -1,6 +1,7 @@
 import os
 import struct
 import tkinter as tk
+import numpy as np
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 
@@ -12,15 +13,29 @@ class ZFBViewer(tk.Tk):
         
         self.folder_path = tk.StringVar()
         
-        # Crear un canvas con un tamaño de 640x480
         self.canvas = tk.Canvas(self, width=640, height=480, bg="gray")
         self.canvas.pack(pady=20)
         
-        # Crear tabla con columnas Nombre y Path
-        self.tree = ttk.Treeview(self, columns=("Name", "Path"), show="headings", height=5)
+        # Frame para la tabla con scrollbar
+        self.tree_frame = tk.Frame(self)
+        self.tree_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=10)
+
+        self.tree_scrollbar = tk.Scrollbar(self.tree_frame)
+        self.tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.tree = ttk.Treeview(
+            self.tree_frame,
+            columns=("Name", "Path"),
+            show="headings",
+            height=5,
+            yscrollcommand=self.tree_scrollbar.set
+        )
         self.tree.heading("Name", text="Name")
         self.tree.heading("Path", text="Path")
-        self.tree.pack(fill=tk.BOTH, expand=False, padx=20, pady=10)
+        self.tree.pack(fill=tk.BOTH, expand=True)
+
+        self.tree_scrollbar.config(command=self.tree.yview)
+
         self.tree.bind("<Double-1>", self.edit_path)
         self.tree.bind("<<TreeviewSelect>>", self.load_image)
         
@@ -43,7 +58,7 @@ class ZFBViewer(tk.Tk):
         self.button_frame.grid_columnconfigure(1, weight=1)
         self.button_frame.grid_columnconfigure(2, weight=1) 
         self.button_frame.grid_columnconfigure(3, weight=1)
- 
+
     def select_folder(self):
         folder_selected = filedialog.askdirectory()
         if folder_selected:
@@ -61,63 +76,48 @@ class ZFBViewer(tk.Tk):
     
     def extract_path(self, file_path):
         try:
+            file_size = os.path.getsize(file_path)
+            img_width, img_height = self.detect_image_size(file_size)
+            if (img_width, img_height) == (640, 480):
+                img_data_size = 0x00096000
+            elif (img_width, img_height) == (640, 400):
+                img_data_size = 0x0007D000
+            elif (img_width, img_height) == (144, 208):
+                img_data_size = 0x0000EA00
+            else:
+                img_data_size = img_width * img_height * 2
+
             with open(file_path, "rb") as f:
-                data = f.read()
-                
-                # Determinar el tamaño de la imagen
-                img_width, img_height = self.detect_image_size(len(data))
-                
-                # Calcular el offset basado en el tamaño de la imagen
-                if (img_width, img_height) == (640, 480):
-                    img_data_size = 0x00096000
-                elif (img_width, img_height) == (144, 208):
-                    img_data_size = 0x0000EA00
-                else:
-                    img_data_size = img_width * img_height * 2  # Cálculo genérico
-                
-                # Extraer la parte del archivo después de la imagen
-                extra_data = data[img_data_size:]
-                
-                # Omitir los primeros y últimos 4 bytes nulos
+                f.seek(img_data_size)
+                extra_data = f.read()
                 clean_data = extra_data.strip(b"\x00")
-                
-                # Intentar decodificar el path
-                try:
-                    decoded_text = clean_data.decode("latin1", errors="ignore")  # Usa latin1 o iso-8859-1
-                    return decoded_text
-                except:
-                    return "Unknown"
+                return clean_data.decode("latin1", errors="ignore") or "Unknown"
         except:
             return "Unknown"
+
     
     def update_path(self, item, new_path, entry):
         values = list(self.tree.item(item, "values"))
-        
-        # Agregar los bytes nulos al inicio y al final del nuevo path
         encoded_path = b"\x00\x00\x00\x00" + new_path.encode("latin1") + b"\x00\x00"
-        
         values[1] = new_path
         self.tree.item(item, values=values)
         entry.destroy()
-        
-        # Guardar cambios en el archivo
         filename = values[0]
         file_path = os.path.join(self.folder_path.get(), filename)
-        
         with open(file_path, "rb") as f:
             data = f.read()
-        
         img_width, img_height = self.detect_image_size(len(data))
         if (img_width, img_height) == (640, 480):
             img_data_size = 0x00096000
+        elif (img_width, img_height) == (640, 400):
+            img_data_size = 0x0007D000
         elif (img_width, img_height) == (144, 208):
             img_data_size = 0x0000EA00
         else:
             img_data_size = img_width * img_height * 2
-        
         with open(file_path, "wb") as f:
-            f.write(data[:img_data_size])  # Escribir la imagen
-            f.write(encoded_path)  # Escribir el path actualizado
+            f.write(data[:img_data_size])
+            f.write(encoded_path)
     
     def edit_path(self, event):
         item = self.tree.selection()[0]
@@ -131,50 +131,39 @@ class ZFBViewer(tk.Tk):
             entry.bind("<Return>", lambda e: self.update_path(item, entry.get(), entry))
             entry.bind("<FocusOut>", lambda e: self.update_path(item, entry.get(), entry))
     
-    
+
     def load_image(self, event):
         selected_item = self.tree.selection()
         if not selected_item:
             return
         filename = self.tree.item(selected_item[0], "values")[0]
         file_path = os.path.join(self.folder_path.get(), filename)
-    
+
         try:
             with open(file_path, "rb") as f:
                 raw_data = f.read()
                 img_width, img_height = self.detect_image_size(len(raw_data))
-    
-                pixel_data = struct.unpack(f"{img_width * img_height}H", raw_data[:img_width * img_height * 2])
-                img = Image.new("RGB", (img_width, img_height))
-    
-                for y in range(img_height):
-                    for x in range(img_width):
-                        pixel = pixel_data[y * img_width + x]
-                        r = (pixel >> 11) & 0x1F
-                        g = (pixel >> 5) & 0x3F
-                        b = pixel & 0x1F
-                        img.putpixel((x, y), (r << 3, g << 2, b << 3))
-    
+                pixel_count = img_width * img_height
+                pixels = np.frombuffer(raw_data[:pixel_count * 2], dtype=np.uint16)
+
+                r = ((pixels >> 11) & 0x1F) << 3
+                g = ((pixels >> 5) & 0x3F) << 2
+                b = (pixels & 0x1F) << 3
+                rgb = np.dstack((r, g, b)).astype(np.uint8).reshape((img_height, img_width, 3))
+
+                img = Image.fromarray(rgb, "RGB")
                 self.current_image = img
                 self.tk_image = ImageTk.PhotoImage(img)
-
-                # Limpiar el canvas antes de mostrar una nueva imagen
                 self.canvas.delete("all")
-
-                # Calcular el centro
-                canvas_width = self.canvas.winfo_width()
-                canvas_height = self.canvas.winfo_height()
-                x_center = canvas_width // 2
-                y_center = canvas_height // 2
-
-                # Dibujar la imagen centrada
+                x_center = self.canvas.winfo_width() // 2
+                y_center = self.canvas.winfo_height() // 2
                 self.canvas.create_image(x_center, y_center, image=self.tk_image, anchor=tk.CENTER)
-    
         except Exception as e:
             messagebox.showerror("Error", f"Error loading image: {e}")
+
     
     def detect_image_size(self, file_size):
-        possible_sizes = [(640, 480), (144, 208), (320, 240)]
+        possible_sizes = [(640, 480), (640, 400), (144, 208), (320, 240)]
         for w, h in possible_sizes:
             if file_size >= w * h * 2:
                 return w, h
@@ -193,11 +182,7 @@ class ZFBViewer(tk.Tk):
             new_img = new_img.resize(self.current_image.size)
             self.current_image = new_img
             self.tk_image = ImageTk.PhotoImage(new_img)
-
-            # Limpiar canvas antes de cargar nueva imagen
             self.canvas.delete("all")
-            
-            # Redibujar imagen centrada
             x_center = self.canvas.winfo_width() // 2
             y_center = self.canvas.winfo_height() // 2
             self.canvas.create_image(x_center, y_center, image=self.tk_image, anchor=tk.CENTER)
@@ -209,19 +194,15 @@ class ZFBViewer(tk.Tk):
                 return
             filename = self.tree.item(selected_item[0], "values")[0]
             file_path = os.path.join(self.folder_path.get(), filename)
-    
             with open(file_path, "rb") as f:
                 original_data = f.read()
-    
             img_width, img_height = self.current_image.size
             raw_data = bytearray()
-    
             for y in range(img_height):
                 for x in range(img_width):
                     r, g, b = self.current_image.getpixel((x, y))
                     rgb565 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
                     raw_data.extend(struct.pack("H", rgb565))
-    
             extra_data = original_data[img_width * img_height * 2:]
             with open(file_path, "wb") as f:
                 f.write(raw_data)
