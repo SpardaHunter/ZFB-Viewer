@@ -2,7 +2,8 @@
 
 Description: Program to view, download and change images embedded in ZFB files, you can also change the "Path".
 
-![imagen](https://github.com/user-attachments/assets/508610c9-469b-4e48-88c8-88bfffd55aea)
+![imagen](https://github.com/user-attachments/assets/4782fb84-ba97-40cd-8e76-f5b38936903c)
+
 
 How it works:
 - Select the folder containing the ZFB files from the "Select Folder" button.
@@ -11,7 +12,7 @@ How it works:
 - From the "Change IMG" button you can select another image that you want with the size you want, since it will resize automatically.
 - From the "Save" button save the image change.
 
-Additional explanation: It is designed for ZFB with images of size 640X480 (hyper screen) and 144X208.
+Additional explanation: It is designed for ZFB with images of size 640X480 (hyper screen), 640x400 (hyper screen Q_ta mod), and 144X208.
 
 
 Extra explanation:
